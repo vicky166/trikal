@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useI18n } from '../i18n/I18n.tsx'
+import { useSession } from '../services/useSession.ts'
 import type { CopyKey } from '../i18n/copy.ts'
 import { Mark } from './Mark.tsx'
 
@@ -15,6 +16,8 @@ const links: { to: string; key: CopyKey }[] = [
 
 export function SiteHeader() {
   const { t, language, setLanguage } = useI18n()
+  const { session } = useSession()
+  const accountLabel = accountName(session?.user.user_metadata, session?.user.email)
   const [open, setOpen] = useState(false)
 
   return (
@@ -43,12 +46,14 @@ export function SiteHeader() {
           >
             {language === 'en' ? t('langHi') : t('langEn')}
           </button>
-          <Link to="/login" className="text-sm text-ivory">
-            {t('login')}
+          <Link to={session ? '/account' : '/login'} className="text-sm text-ivory">
+            {session ? accountLabel : t('login')}
           </Link>
-          <Link to="/login" className="rounded-xl bg-ivory px-4 py-2 text-sm text-ink">
-            {t('getStarted')}
-          </Link>
+          {session ? null : (
+            <Link to="/signup" className="rounded-xl bg-ivory px-4 py-2 text-sm text-ink">
+              {t('getStarted')}
+            </Link>
+          )}
         </div>
         <button type="button" className="text-sm text-ivory lg:hidden" onClick={() => setOpen((value) => !value)}>
           {open ? t('close') : t('menu')}
@@ -64,11 +69,18 @@ export function SiteHeader() {
           <button type="button" className="text-left text-mist" onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}>
             {language === 'en' ? t('langHi') : t('langEn')}
           </button>
-          <Link to="/login" onClick={() => setOpen(false)}>
-            {t('getStarted')}
+          <Link to={session ? '/account' : '/signup'} onClick={() => setOpen(false)}>
+            {session ? accountLabel : t('getStarted')}
           </Link>
         </nav>
       ) : null}
     </header>
   )
+}
+
+function accountName(metadata: unknown, email?: string): string {
+  if (metadata && typeof metadata === 'object' && 'name' in metadata && typeof metadata.name === 'string' && metadata.name) {
+    return metadata.name
+  }
+  return email ?? 'Account'
 }

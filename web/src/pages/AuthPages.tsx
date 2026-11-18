@@ -1,6 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { loginSchema } from '../domain/birth.ts'
+import { loginSchema, type BirthInput } from '../domain/birth.ts'
+import { findCity, cities } from '../domain/places.ts'
+import { upsertProfile } from '../domain/profiles.ts'
+import { saveSignupDraft } from '../domain/signupDraft.ts'
 import { PrimaryButton } from '../components/Button.tsx'
 import { PageShell } from '../components/PageShell.tsx'
 import { useI18n } from '../i18n/I18n.tsx'
@@ -32,7 +35,13 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
   const { configured, ready, session } = useSession()
   const issue = authIssue()
   const navigate = useNavigate()
+  useEffect(() => {
+    if ((mode === 'login' || mode === 'signup') && session) navigate('/dashboard')
+  }, [mode, navigate, session])
   const [name, setName] = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [birthTime, setBirthTime] = useState('')
+  const [cityId, setCityId] = useState('delhi')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
@@ -88,7 +97,9 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
       }
       const parsed = loginSchema.safeParse({ email, password })
       const trimmedName = name.trim()
-      if (mode === 'signup' && (trimmedName.length < 2 || trimmedName.length > 80)) {
+      const city = findCity(cityId)
+      const birth = mode === 'signup' ? signupBirth(trimmedName, birthDate, birthTime, city) : null
+      if (mode === 'signup' && (!birth || trimmedName.length < 2)) {
         setError(t('signupFormError'))
         return
       }
@@ -96,14 +107,18 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
         setError(mode === 'signup' ? t('signupFormError') : t('authFormError'))
         return
       }
+      if (birth) {
+        saveSignupDraft({ name: trimmedName, birthDate, birthTime, cityId })
+        upsertProfile(localStorage, birth)
+      }
       const result =
         mode === 'signup'
           ? await supabase.auth.signUp({
               email: parsed.data.email,
               password: parsed.data.password,
               options: {
-                data: { name: trimmedName },
-                emailRedirectTo: `${window.location.origin}/login`,
+                data: { name: trimmedName, birthDate, birthTime, cityId },
+                emailRedirectTo: `${window.location.origin}/dashboard`,
               },
             })
           : await supabase.auth.signInWithPassword(parsed.data)
@@ -115,11 +130,11 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
         const outcome = signupOutcome(result.data.user, Boolean(result.data.session))
         if (outcome === 'duplicate') setError(t('duplicateAccount'))
         else if (outcome === 'confirm') setMessage(t('checkEmail'))
-        else navigate('/account')
+        else navigate('/dashboard', { state: { name: trimmedName, birthDate, birthTime, cityId } })
         return
       }
       if (!result.data.session) setMessage(t('checkEmail'))
-      else navigate('/account')
+      else navigate('/dashboard')
     } finally {
       setBusy(false)
     }
@@ -141,10 +156,28 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
         {mode === 'reset' && configured && ready && !session ? <p className="leading-7 text-red-200">{t('resetNeedsLink')}</p> : null}
         <form className="flex flex-col gap-4" onSubmit={(event) => void onSubmit(event)} noValidate>
           {mode === 'signup' ? (
-            <label className="flex flex-col gap-2 text-sm text-mist">
-              {t('fullName')}
-              <input className={field} type="text" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} disabled={busy} />
-            </label>
+            <>
+              <label className="flex flex-col gap-2 text-sm text-mist">
+                {t('fullName')}
+                <input className={field} type="text" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} disabled={busy} />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-mist">
+                {t('birthDate')}
+                <input className={field} type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} disabled={busy} />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-mist">
+                {t('birthTime')}
+                <input className={field} type="time" value={birthTime} onChange={(event) => setBirthTime(event.target.value)} disabled={busy} />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-mist">
+                {t('city')}
+                <select className={field} value={cityId} onChange={(event) => setCityId(event.target.value)} disabled={busy}>
+                  {cities.map((city) => (
+                    <option key={city.id} value={city.id}>{city.label}</option>
+                  ))}
+                </select>
+              </label>
+            </>
           ) : null}
           {mode !== 'reset' ? (
             <label className="flex flex-col gap-2 text-sm text-mist">
@@ -178,6 +211,23 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
       </section>
     </PageShell>
   )
+}
+
+function signupBirth(name: string, birthDate: string, birthTime: string, city: ReturnType<typeof findCity>): BirthInput | null {
+  if (!city || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(birthTime)) return null
+  return {
+    fullName: name,
+    birthDate,
+    timePrecision: 'exact',
+    birthTime,
+    timeZone: city.timeZone,
+    cityId: city.id,
+    cityLabel: city.label,
+    country: city.country,
+    latitude: city.latitude,
+    longitude: city.longitude,
+    gender: 'unspecified',
+  }
 }
 
 function messageFor(error: { message: string; code?: string | null }, t: (key: 'invalidCredentials' | 'duplicateAccount' | 'emailNotConfirmed' | 'resetNeedsLink') => string): string {

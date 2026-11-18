@@ -5,6 +5,7 @@ import { ProfilesProvider } from './state/Profiles.tsx'
 import { AskPage } from './pages/AskPage.tsx'
 import { BirthPage } from './pages/BirthPage.tsx'
 import { ChartsPage } from './pages/ChartsPage.tsx'
+import { DashboardPage } from './pages/DashboardPage.tsx'
 import { LandingPage } from './pages/LandingPage.tsx'
 import { PricingPage } from './pages/PricingPage.tsx'
 import { StatusPage } from './pages/StatusPage.tsx'
@@ -25,6 +26,7 @@ function Routed() {
     <Suspense fallback={<p className="px-5 py-16 text-mist">{t('sanskrit')}</p>}>
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/charts" element={<ChartsPage />} />
       <Route path="/birth" element={<BirthPage />} />
       <Route path="/birth/:id" element={<BirthPage />} />

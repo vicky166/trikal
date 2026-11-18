@@ -4,6 +4,7 @@
 create table public.users (
   id uuid primary key references auth.users (id) on delete cascade,
   email text unique,
+  name text check (name is null or char_length(name) between 2 and 80),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -222,8 +223,10 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.users (id, email) values (new.id, new.email);
-  insert into public.user_profiles (user_id) values (new.id);
+  insert into public.users (id, email, name)
+  values (new.id, new.email, nullif(trim(coalesce(new.raw_user_meta_data->>'name', '')), ''));
+  insert into public.user_profiles (user_id, display_name)
+  values (new.id, nullif(trim(coalesce(new.raw_user_meta_data->>'name', '')), ''));
   insert into public.user_preferences (user_id) values (new.id);
   insert into public.subscriptions (user_id, plan, status, provider) values (new.id, 'free', 'active', 'none');
   return new;

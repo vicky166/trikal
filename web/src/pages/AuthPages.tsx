@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { loginSchema } from '../domain/birth.ts'
 import { PrimaryButton } from '../components/Button.tsx'
 import { PageShell } from '../components/PageShell.tsx'
@@ -31,6 +31,8 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
   const { t } = useI18n()
   const { configured, ready, session } = useSession()
   const issue = authIssue()
+  const navigate = useNavigate()
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
@@ -85,8 +87,13 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
         return
       }
       const parsed = loginSchema.safeParse({ email, password })
+      const trimmedName = name.trim()
+      if (mode === 'signup' && (trimmedName.length < 2 || trimmedName.length > 80)) {
+        setError(t('signupFormError'))
+        return
+      }
       if (!parsed.success) {
-        setError(t('authFormError'))
+        setError(mode === 'signup' ? t('signupFormError') : t('authFormError'))
         return
       }
       const result =
@@ -94,7 +101,10 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
           ? await supabase.auth.signUp({
               email: parsed.data.email,
               password: parsed.data.password,
-              options: { emailRedirectTo: `${window.location.origin}/login` },
+              options: {
+                data: { name: trimmedName },
+                emailRedirectTo: `${window.location.origin}/login`,
+              },
             })
           : await supabase.auth.signInWithPassword(parsed.data)
       if (result.error) {
@@ -105,11 +115,11 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
         const outcome = signupOutcome(result.data.user, Boolean(result.data.session))
         if (outcome === 'duplicate') setError(t('duplicateAccount'))
         else if (outcome === 'confirm') setMessage(t('checkEmail'))
-        else setMessage(t('signedIn'))
+        else navigate('/account')
         return
       }
       if (!result.data.session) setMessage(t('checkEmail'))
-      else setMessage(t('signedIn'))
+      else navigate('/account')
     } finally {
       setBusy(false)
     }
@@ -130,6 +140,12 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
         ) : null}
         {mode === 'reset' && configured && ready && !session ? <p className="leading-7 text-red-200">{t('resetNeedsLink')}</p> : null}
         <form className="flex flex-col gap-4" onSubmit={(event) => void onSubmit(event)} noValidate>
+          {mode === 'signup' ? (
+            <label className="flex flex-col gap-2 text-sm text-mist">
+              {t('fullName')}
+              <input className={field} type="text" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} disabled={busy} />
+            </label>
+          ) : null}
           {mode !== 'reset' ? (
             <label className="flex flex-col gap-2 text-sm text-mist">
               {t('email')}

@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #090814;
+  --color-raised: #120f1c;
+  --color-card: #171322;
+  --color-gold: #c6a36a;
+  --color-ivory: #f3ede2;
+  --color-mist: #9c93a8;
+  --color-line: #c6a36a;
+  --font-serif: "Cormorant Garamond", Georgia, serif;
+  --font-sans: Outfit, sans-serif;
+  --font-deva: "Tiro Devanagari Sanskrit", serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-ink);
+  color: var(--color-ivory);
+  font-family: var(--font-sans);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+
+  .no-print,
+  header,
+  footer {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .twinkle {
+    animation: none;
+  }
+}
+
+@keyframes twinkle {
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.twinkle {
+  animation: twinkle 4.4s ease-in-out infinite;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 3px;
+}

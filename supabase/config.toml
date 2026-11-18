@@ -1,0 +1,28 @@
+# Local Supabase, not started on this machine.
+# Docker and the Supabase CLI were not installed when this file was added.
+project_id = "trikal"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:5173"
+additional_redirect_urls = ["http://127.0.0.1:5173/reset"]
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true

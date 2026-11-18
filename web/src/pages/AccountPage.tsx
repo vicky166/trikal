@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PageShell } from '../components/PageShell.tsx'
 import { useI18n } from '../i18n/I18n.tsx'
 import { getSupabase } from '../services/supabase.ts'
@@ -11,6 +11,36 @@ export function AccountPage() {
   const { clear, syncStatus, syncDetail, retrySync } = useProfiles()
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [savedName, setSavedName] = useState<string | null>(null)
+  const [savedEmail, setSavedEmail] = useState<string | null>(null)
+  const [savedReady, setSavedReady] = useState(false)
+
+  useEffect(() => {
+    const supabase = getSupabase()
+    const userId = session?.user.id
+    if (!supabase || !userId) return
+    let active = true
+    setSavedReady(false)
+    void supabase
+      .from('users')
+      .select('name, email')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data, error: readError }) => {
+        if (!active) return
+        if (readError || !data) {
+          setSavedName(null)
+          setSavedEmail(null)
+        } else {
+          setSavedName(typeof data.name === 'string' ? data.name : null)
+          setSavedEmail(typeof data.email === 'string' ? data.email : null)
+        }
+        setSavedReady(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [session?.user.id])
 
   return (
     <PageShell>
@@ -19,6 +49,12 @@ export function AccountPage() {
         <h1 className="font-serif text-5xl">{t('accountTitle')}</h1>
         <p className="leading-8 text-mist">{configured ? t('authReady') : t('accountIntro')}</p>
         {session?.user.email ? <p>{t('signedIn')}: {session.user.email}</p> : <p className="text-sm text-gold">{t('notAccount')}</p>}
+        {session && savedEmail ? (
+          <p className="rounded-2xl border border-line/25 bg-card p-4 leading-7">
+            {t('savedUser')} {savedName ? `${savedName} · ` : ''}{savedEmail}
+          </p>
+        ) : null}
+        {session && savedReady && !savedEmail ? <p className="text-mist">{t('userMissing')}</p> : null}
         {syncStatus === 'syncing' ? <p className="text-mist">{t('syncing')}</p> : null}
         {syncStatus === 'synced' ? <p className="text-mist">{t('syncSaved')}</p> : null}
         {syncStatus === 'offline' ? <p className="text-mist">{t('syncOffline')}</p> : null}

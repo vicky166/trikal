@@ -4,6 +4,8 @@ import { loginSchema } from '../domain/birth.ts'
 import { PrimaryButton } from '../components/Button.tsx'
 import { PageShell } from '../components/PageShell.tsx'
 import { useI18n } from '../i18n/I18n.tsx'
+import { authIssue } from '../services/authConfig.ts'
+import { classifyAuthError, signupOutcome } from '../services/authMessages.ts'
 import { getSupabase } from '../services/supabase.ts'
 import { useSession } from '../services/useSession.ts'
 
@@ -27,11 +29,13 @@ export function ResetPage() {
 
 function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
   const { t } = useI18n()
-  const { configured, session } = useSession()
+  const { configured, ready, session } = useSession()
+  const issue = authIssue()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const title = mode === 'signup' ? t('signupTitle') : mode === 'forgot' ? t('forgotTitle') : mode === 'reset' ? t('resetTitle') : t('login')
   const body = mode === 'signup' ? t('signupBody') : mode === 'forgot' ? t('forgotBody') : mode === 'reset' ? t('resetBody') : t('loginBody')
 
@@ -39,49 +43,76 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
     event.preventDefault()
     setError('')
     setMessage('')
-    if (!configured) {
-      setMessage(mode === 'login' ? t('loginStopped') : body)
+    if (issue === 'missing') {
+      setError(t('loginStopped'))
+      return
+    }
+    if (issue) {
+      setError(t('authInvalid'))
       return
     }
     const supabase = getSupabase()
-    if (!supabase) return
-    if (mode === 'forgot') {
-      const parsed = loginSchema.shape.email.safeParse(email)
-      if (!parsed.success) {
-        setError(t('formError'))
+    if (!supabase) {
+      setError(t('authInvalid'))
+      return
+    }
+    setBusy(true)
+    try {
+      if (mode === 'forgot') {
+        const parsed = loginSchema.shape.email.safeParse(email)
+        if (!parsed.success) {
+          setError(t('authFormError'))
+          return
+        }
+        const result = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset` })
+        if (result.error) setError(messageFor(result.error, t))
+        else setMessage(t('passwordResetSent'))
         return
       }
-      const result = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset` })
-      if (result.error) setError(result.error.message)
-      else setMessage(t('passwordResetSent'))
-      return
-    }
-    if (mode === 'reset') {
-      const parsed = loginSchema.shape.password.safeParse(password)
-      if (!parsed.success) {
-        setError(t('formError'))
+      if (mode === 'reset') {
+        const parsed = loginSchema.shape.password.safeParse(password)
+        if (!parsed.success) {
+          setError(t('authFormError'))
+          return
+        }
+        if (!session) {
+          setError(t('resetNeedsLink'))
+          return
+        }
+        const result = await supabase.auth.updateUser({ password })
+        if (result.error) setError(messageFor(result.error, t))
+        else setMessage(t('passwordUpdated'))
         return
       }
-      const result = await supabase.auth.updateUser({ password })
-      if (result.error) setError(result.error.message)
-      else setMessage(t('passwordUpdated'))
-      return
+      const parsed = loginSchema.safeParse({ email, password })
+      if (!parsed.success) {
+        setError(t('authFormError'))
+        return
+      }
+      const result =
+        mode === 'signup'
+          ? await supabase.auth.signUp({
+              email: parsed.data.email,
+              password: parsed.data.password,
+              options: { emailRedirectTo: `${window.location.origin}/login` },
+            })
+          : await supabase.auth.signInWithPassword(parsed.data)
+      if (result.error) {
+        setError(messageFor(result.error, t))
+        return
+      }
+      if (mode === 'signup') {
+        const outcome = signupOutcome(result.data.user, Boolean(result.data.session))
+        if (outcome === 'duplicate') setError(t('duplicateAccount'))
+        else if (outcome === 'confirm') setMessage(t('checkEmail'))
+        else setMessage(t('signedIn'))
+        return
+      }
+      if (!result.data.session) setMessage(t('checkEmail'))
+      else setMessage(t('signedIn'))
+    } finally {
+      setBusy(false)
     }
-    const parsed = loginSchema.safeParse({ email, password })
-    if (!parsed.success) {
-      setError(t('formError'))
-      return
-    }
-    const result =
-      mode === 'signup'
-        ? await supabase.auth.signUp(parsed.data)
-        : await supabase.auth.signInWithPassword(parsed.data)
-    if (result.error) {
-      setError(result.error.message)
-      return
-    }
-    if (!result.data.session) setMessage(t('checkEmail'))
-    else setMessage(t('signedIn'))
   }
 
   return (
@@ -90,21 +121,37 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
         <p className="font-deva text-lg text-gold">{t('sanskrit')}</p>
         <h1 className="font-serif text-5xl">{title}</h1>
         <p className="leading-8 text-mist">{configured ? t('authReady') : body}</p>
-        {session?.user.email ? <p className="text-gold">{t('signedIn')}: {session.user.email}</p> : null}
+        {issue === 'missing' ? <p className="leading-7 text-red-200">{t('loginStopped')}</p> : null}
+        {issue === 'invalid' ? <p className="leading-7 text-red-200">{t('authInvalid')}</p> : null}
+        {session?.user.email ? (
+          <p className="text-gold">
+            {t('signedIn')}: {session.user.email}
+          </p>
+        ) : null}
+        {mode === 'reset' && configured && ready && !session ? <p className="leading-7 text-red-200">{t('resetNeedsLink')}</p> : null}
         <form className="flex flex-col gap-4" onSubmit={(event) => void onSubmit(event)} noValidate>
           {mode !== 'reset' ? (
             <label className="flex flex-col gap-2 text-sm text-mist">
               {t('email')}
-              <input className={field} type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <input className={field} type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} />
             </label>
           ) : null}
           {mode !== 'forgot' ? (
             <label className="flex flex-col gap-2 text-sm text-mist">
               {mode === 'reset' ? t('newPassword') : t('password')}
-              <input className={field} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(event) => setPassword(event.target.value)} />
+              <input
+                className={field}
+                type="password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={busy}
+              />
             </label>
           ) : null}
-          <PrimaryButton type="submit">{mode === 'reset' ? t('updatePassword') : mode === 'forgot' ? t('forgotLink') : t('submitLogin')}</PrimaryButton>
+          <PrimaryButton type="submit" disabled={busy}>
+            {busy ? t('authWorking') : mode === 'reset' ? t('updatePassword') : mode === 'forgot' ? t('forgotLink') : t('submitLogin')}
+          </PrimaryButton>
         </form>
         {message ? <p className="rounded-2xl border border-line/25 bg-card p-4 leading-7">{message}</p> : null}
         {error ? <p className="leading-7 text-red-200">{error}</p> : null}
@@ -115,4 +162,13 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' | 'forgot' | 'reset' }) {
       </section>
     </PageShell>
   )
+}
+
+function messageFor(error: { message: string; code?: string | null }, t: (key: 'invalidCredentials' | 'duplicateAccount' | 'emailNotConfirmed' | 'resetNeedsLink') => string): string {
+  const failure = classifyAuthError(error)
+  if (failure === 'invalid') return t('invalidCredentials')
+  if (failure === 'duplicate') return t('duplicateAccount')
+  if (failure === 'unconfirmed') return t('emailNotConfirmed')
+  if (failure === 'session') return t('resetNeedsLink')
+  return error.message
 }
